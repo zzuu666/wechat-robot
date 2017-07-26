@@ -234,11 +234,66 @@ class WeChat {
         'rr': ~(this.getTime)
       }
     }).then(res => {
-      console.log('[OK] 同步机制成功...')
+      let json = res.data
+      if (!json.BaseResponse.Ret) {
+        this.syncKey = json.SyncKey
+        console.log('[OK] 获取到新消息...')
+      }
       return true
     }).catch(err => {
       console.log('[ERROR] 同步机制错误...', err)
       return false
+    })
+  }
+  genSyncKey () {
+    return this.syncKey.List.map(el => el.Key + '_' + el.Val).join('|')
+  }
+  wxSyncCheck () {
+    let random = (Math.random() + '').substr(2, 15)
+    return axios.get('https://webpush.wx2.qq.com/cgi-bin/mmwebwx-bin/synccheck', {
+      params: {
+        r: this.getTime(),
+        skey: this.skey,
+        sid: this.sid,
+        uin: this.uin,
+        deviceid: 'e' + random,
+        synckey: this.genSyncKey()
+      }
+    }).then(res => {
+      console.log(res.data)
+      let jsonReg = new RegExp('window.synccheck=([0-9]*);')
+      let json = JSON.parse(jsonReg.exec(res.data)[1])
+      console.log(json)
+      return json
+    }).catch(err => {
+      console.log('[Error] 消息同步轮询发生异常...', err)
+    })
+  }
+  wxSendMessage (from, to, message) {
+    let random = (Math.random() + '').substr(4, 4)
+    axios({
+      method: 'post',
+      url: 'https://wx2.qq.com/cgi-bin/mmwebwx-bin/webwxsendmsg?lang=zh_CN',
+      data: {
+        'BaseRequest': this.genBaseRequest(),
+        'Msg': {
+          'ClientMsgId': this.getTime() + random,
+          'Content': message,
+          'FromUserName': from,
+          'ToUserName': to,
+          'Type': 1
+        },
+        'Scene': 0
+      }
+    }).then(res => {
+      let json = res.data
+      if (!json.BaseResponse.Ret) {
+        console.log(`[OK] 发送消息 [${message}] 成功...`)
+      } else {
+        console.log(`[Waring] 发送消息失败`)
+      }
+    }).catch(err => {
+      console.log(`[Waring] 发送消息失败`, err)
     })
   }
 }
