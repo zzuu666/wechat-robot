@@ -1,6 +1,6 @@
 /**
- * @file
- * @author
+ * @file 微信核心模块
+ * @author Yaozong Sun <zzuu666@outlook.com>
  */
 const axios = require('axios')
 const opn = require('opn')
@@ -24,6 +24,9 @@ class WeChat {
     this.memberList = []
     this.cookie = []
   }
+  /**
+   * 程序入口登录与获取信息相关
+   */
   async run () {
     await this.getUUID()
     this.showQR()
@@ -34,8 +37,22 @@ class WeChat {
     await this.getCookie()
     await this.wxInit()
     await this.wxStatusNotifiy()
-    await this.wxSync()
+    this.wxSync()
     await this.wxGetContcat()
+    this.getMessage()
+  }
+  async getMessage () {
+    let messageJson = null
+    while (1) {
+      messageJson = await this.wxSyncCheck()
+      if (parseInt(messageJson.retcode, 10) === 1102) {
+        console.log('[Error] 消息同步出现异常 1102 ...')
+        break
+      }
+      if (parseInt(messageJson.selector, 10) === 2) {
+        await this.wxSync()
+      }
+    }
   }
   getTime () {
     return new Date().valueOf()
@@ -111,13 +128,16 @@ class WeChat {
         lang: 'zh_CN'
       }
     }).then(res => {
-      console.log('data', res.data)
-      console.log('headers', res.headers)
       let xmlString = res.data
+      let retReg = new RegExp('<ret>([0-9]*)</ret>')
       let skeyReg = new RegExp('<skey>([a-zA-Z0-9/_%@]*)</skey>')
-      let sidReg = new RegExp('<wxsid>([a-zA-Z0-9/_%@]*)</wxsid>')
+      let sidReg = new RegExp('<wxsid>([a-zA-Z0-9/_%@+]*)</wxsid>')
       let uinReg = new RegExp('<wxuin>([a-zA-Z0-9/_%@]*)</wxuin>')
       let passTicketReg = new RegExp('<pass_ticket>([a-zA-Z0-9/_%@]*)</pass_ticket>')
+      let ret = retReg.exec(xmlString)[1]
+      if (parseInt(ret, 10)) {
+        throw new Error('[Error] Cooike 获取出现异常')
+      }
       this.skey = skeyReg.exec(xmlString)[1]
       this.sid = sidReg.exec(xmlString)[1]
       this.uin = uinReg.exec(xmlString)[1]
@@ -186,7 +206,6 @@ class WeChat {
     })
   }
   parseCookie () {
-    console.log(this.cookie.map(el => el.split(';')[0]).join('; '))
     return this.cookie.map(el => el.split(';')[0]).join('; ')
   }
   wxGetContcat () {
@@ -203,11 +222,10 @@ class WeChat {
       }
     }).then(res => {
       let json = res.data
-      console.log(res.data)
       if (!json.BaseResponse.Ret) {
         this.memberCount = json.MemberCount
         this.memberList = json.MemberList
-        console.log(`[OK] 获取联系人列表成功...共计 ${this.this.memberCount} 人`)
+        console.log(`[OK] 获取联系人列表成功...共计 ${this.memberCount} 人`)
         return true
       } else {
         console.log('[Error] 获取联系人列表失败...')
@@ -232,12 +250,18 @@ class WeChat {
         'BaseRequest': this.genBaseRequest(),
         'SyncKey': this.syncKey,
         'rr': ~(this.getTime)
+      },
+      headers: {
+        'Cookie': this.parseCookie()
       }
     }).then(res => {
       let json = res.data
       if (!json.BaseResponse.Ret) {
         this.syncKey = json.SyncKey
         console.log('[OK] 获取到新消息...')
+        if (json.AddMsgList.length) {
+          console.log(json.AddMsgList[0].Content)
+        }
       }
       return true
     }).catch(err => {
@@ -258,13 +282,19 @@ class WeChat {
         uin: this.uin,
         deviceid: 'e' + random,
         synckey: this.genSyncKey()
+      },
+      headers: {
+        'Cookie': this.parseCookie()
       }
     }).then(res => {
-      console.log(res.data)
-      let jsonReg = new RegExp('window.synccheck=([0-9]*);')
-      let json = JSON.parse(jsonReg.exec(res.data)[1])
-      console.log(json)
-      return json
+      let reg = new RegExp('window.synccheck={retcode:"([0-9]+)",selector:"([0-9]+)"}')
+      let exec = reg.exec(res.data)
+      // 返回数据为 window.synccheck={retcode:"1102",selector:"0"}
+      let info = {
+        retcode: exec[1],
+        selector: exec[2]
+      }
+      return info
     }).catch(err => {
       console.log('[Error] 消息同步轮询发生异常...', err)
     })
@@ -284,6 +314,9 @@ class WeChat {
           'Type': 1
         },
         'Scene': 0
+      },
+      headers: {
+        'Cookie': this.parseCookie()
       }
     }).then(res => {
       let json = res.data
