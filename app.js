@@ -260,6 +260,11 @@ class WeChat {
         this.syncKey = json.SyncKey
         console.log('[OK] 获取到新消息...')
         if (json.AddMsgList.length) {
+          let content = json.AddMsgList[0].Content
+          let sentence = ['草船借箭', '三打白骨精', '壮徒恒贾勇，拔拒抵长河', '战伐有功业，焉能守旧丘']
+          if (content.indexOf('小山') > -1) {
+            this.wxSendMessage(this.user.UserName, json.AddMsgList[0].FromUserName, '此人' + sentence[Math.round(Math.random() * 100) % 4])
+          }
           console.log(json.AddMsgList[0].Content)
         }
       }
